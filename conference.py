@@ -72,7 +72,7 @@ FIELDS = {
 
 CONF_GET_REQUEST = endpoints.ResourceContainer(
     message_types.VoidMessage,
-    websafeConferenceKey=messages.StringField(1),
+    websafeConferenceKey=messages.StringField(1)
 )
 
 CONF_TOPIC_REQUEST = endpoints.ResourceContainer(
@@ -82,7 +82,7 @@ CONF_TOPIC_REQUEST = endpoints.ResourceContainer(
 
 CONF_POST_REQUEST = endpoints.ResourceContainer(
     ConferenceForm,
-    websafeConferenceKey=messages.StringField(1),
+    websafeConferenceKey=messages.StringField(1)
 )
 
 SESSIONS_GET_REQUEST = endpoints.ResourceContainer(
@@ -565,7 +565,7 @@ class ConferenceApi(remote.Service):
         """Get upcoming conferences"""
         conferences = Conference.query(Conference.startDate >= datetime.today()) \
             .order(Conference.startDate) \
-            .fetch(limit=10) # limit number of conferences to 10
+            .fetch(limit=10)  # limit number of conferences to 10
 
         organizer_keys = [ndb.Key(Profile, conference.organizerUserId) for conference in
                           conferences]
@@ -624,13 +624,18 @@ class ConferenceApi(remote.Service):
         # create Session object based on dictionary data and insert
         Session(**data).put()
 
+        # set featured speaker
+        taskqueue.add(params={'speaker': request.speaker},
+                      url='/tasks/set_featured_speaker')
+
         return request
 
     @endpoints.method(SessionForm, SessionForm,
-                      path='sessions', name='createSession')
+                      path='sessions',
+                      http_method='POST',
+                      name='createSession')
     def createSession(self, request):
         """Create a new session"""
-        self._setFeaturedSpeaker(request.speaker)
         return self._createSessionObject(request)
 
     @endpoints.method(SESSIONS_GET_REQUEST, SessionForms,
@@ -700,20 +705,6 @@ class ConferenceApi(remote.Service):
         )
 
     # - - - Featured speaker - - - - - - - - - - - - - - - - - - - -
-
-    def _setFeaturedSpeaker(self, speaker):
-        curr_speaker = memcache.get(MEMCACHE_FEATURED_SPEAKER_KEY)
-
-        if not curr_speaker:
-            # if no current featured speaker is set, set default
-            memcache.set(MEMCACHE_FEATURED_SPEAKER_KEY, speaker)
-        else:
-            # count up to 3 sessions with current speaker
-            sessions = Session.query(Session.speaker == speaker).count(3)
-
-            # if session count is greater than or equal to 3, set new featured speaker
-            if sessions >= 3:
-                memcache.set(MEMCACHE_FEATURED_SPEAKER_KEY, speaker)
 
     @endpoints.method(message_types.VoidMessage, StringMessage,
                       path='getFeaturedSpeaker',

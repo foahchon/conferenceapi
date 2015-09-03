@@ -15,7 +15,10 @@ __author__ = 'wesc+api@google.com (Wesley Chun)'
 import webapp2
 from google.appengine.api import app_identity
 from google.appengine.api import mail
-from conference import ConferenceApi
+from google.appengine.api import memcache
+from conference import ConferenceApi, MEMCACHE_FEATURED_SPEAKER_KEY
+from models import Session
+
 
 class SetAnnouncementHandler(webapp2.RequestHandler):
     def get(self):
@@ -29,16 +32,36 @@ class SendConfirmationEmailHandler(webapp2.RequestHandler):
         """Send email confirming Conference creation."""
         mail.send_mail(
             'noreply@%s.appspotmail.com' % (
-                app_identity.get_application_id()),     # from
-            self.request.get('email'),                  # to
-            'You created a new Conference!',            # subj
-            'Hi, you have created a following '         # body
+                app_identity.get_application_id()),  # from
+            self.request.get('email'),  # to
+            'You created a new Conference!',  # subj
+            'Hi, you have created a following '  # body
             'conference:\r\n\r\n%s' % self.request.get(
                 'conferenceInfo')
         )
 
 
+class SetFeaturedSpeaker(webapp2.RequestHandler):
+    def post(self):
+        curr_speaker = memcache.get(MEMCACHE_FEATURED_SPEAKER_KEY)
+        req_speaker = self.request.get('speaker')
+
+        print "=========================", req_speaker
+
+        if not curr_speaker:
+            # if no current featured speaker is set, set default
+            memcache.set(MEMCACHE_FEATURED_SPEAKER_KEY, req_speaker)
+        else:
+            # count up to 3 sessions with current speaker
+            sessions = Session.query(Session.speaker == req_speaker).count(3)
+
+            # if session count is greater than or equal to 3, set new featured speaker
+            if sessions >= 3:
+                memcache.set(MEMCACHE_FEATURED_SPEAKER_KEY, req_speaker)
+
+
 app = webapp2.WSGIApplication([
     ('/crons/set_announcement', SetAnnouncementHandler),
     ('/tasks/send_confirmation_email', SendConfirmationEmailHandler),
+    ('/tasks/set_featured_speaker', SetFeaturedSpeaker)
 ], debug=True)
